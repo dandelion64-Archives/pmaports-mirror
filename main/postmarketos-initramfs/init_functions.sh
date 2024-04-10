@@ -6,6 +6,11 @@ PMOS_BOOT=""
 PMOS_ROOT=""
 
 CONFIGFS=/config/usb_gadget
+CONFIGFS_ACM_FUNCTION="acm.usb0"
+HOST_IP="${unudhcpd_host_ip:-172.16.42.1}"
+
+deviceinfo_name=""
+deviceinfo_codename=""
 
 # Redirect stdout and stderr to logfile
 setup_log() {
@@ -717,9 +722,8 @@ start_unudhcpd() {
 		return
 	fi
 
-	local host_ip="${unudhcpd_host_ip:-172.16.42.1}"
 	local client_ip="${unudhcpd_client_ip:-172.16.42.2}"
-	echo "Starting unudhcpd with server ip $host_ip, client ip: $client_ip"
+	echo "Starting unudhcpd with server ip $HOST_IP, client ip: $client_ip"
 
 	# Get usb interface
 	usb_network_function="${deviceinfo_usb_network_function:-ncm.usb0}"
@@ -734,12 +738,12 @@ start_unudhcpd() {
 		INTERFACE=""
 	fi
 	if [ -n "$INTERFACE" ]; then
-		ifconfig "$INTERFACE" "$host_ip"
-	elif ifconfig rndis0 "$host_ip" 2>/dev/null; then
+		ifconfig "$INTERFACE" "$HOST_IP"
+	elif ifconfig rndis0 "$HOST_IP" 2>/dev/null; then
 		INTERFACE=rndis0
-	elif ifconfig usb0 "$host_ip" 2>/dev/null; then
+	elif ifconfig usb0 "$HOST_IP" 2>/dev/null; then
 		INTERFACE=usb0
-	elif ifconfig eth0 "$host_ip" 2>/dev/null; then
+	elif ifconfig eth0 "$HOST_IP" 2>/dev/null; then
 		INTERFACE=eth0
 	fi
 
@@ -753,8 +757,175 @@ start_unudhcpd() {
 	echo "  Using interface $INTERFACE"
 	echo "  Starting the DHCP daemon"
 	(
-		unudhcpd -i "$INTERFACE" -s "$host_ip" -c "$client_ip"
+		unudhcpd -i "$INTERFACE" -s "$HOST_IP" -c "$client_ip"
 	) &
+}
+
+setup_usb_acm_configfs() {
+	active_udc="$(cat $CONFIGFS/g1/UDC)"
+
+	if ! [ -e "$CONFIGFS" ]; then
+		echo "  /config/usb_gadget does not exist, can't set up serial gadget"
+		return 1
+	fi
+
+	# unset UDC
+	echo "" > /config/usb_gadget/g1/UDC
+
+	# Create acm function
+	mkdir "$CONFIGFS/g1/functions/$CONFIGFS_ACM_FUNCTION" \
+		|| echo "  Couldn't create $CONFIGFS/g1/functions/$CONFIGFS_ACM_FUNCTION"
+
+	# Link the acm function to the configuration
+	ln -s "$CONFIGFS/g1/functions/$CONFIGFS_ACM_FUNCTION" "$CONFIGFS/g1/configs/c.1" \
+		|| echo "  Couldn't symlink $CONFIGFS_ACM_FUNCTION"
+
+	return 0
+}
+
+# Spawn a subshell to restart the getty if it exits
+# $1: tty
+run_getty() {
+	{
+		# Due to how the Linux host ACM driver works, we need to wait
+		# for data to be sent from the host before spawning the getty.
+		# Otherwise our README message will be echo'd back all garbled.
+		# On Linux in particular, there is a hack we can use: by writing
+		# something to the port, it will be echo'd back at the moment the
+		# port on the host side is opened, so user input won't even be
+		# needed in most cases. For more info see the blog posts at:
+		# https://michael.stapelberg.ch/posts/2021-04-27-linux-usb-virtual-serial-cdc-acm/
+		# https://connolly.tech/posts/2024_04_15-broken-connections/
+		if [ "$1" = "ttyGS0" ]; then
+			echo " " > /dev/ttyGS0
+			# shellcheck disable=SC3061
+			read -r < /dev/ttyGS0
+		fi
+		while /sbin/getty -n -l /sbin/pmos_getty "$1" 115200 vt100; do
+			sleep 0.2
+		done
+	} &
+}
+
+debug_shell() {
+	echo "Entering debug shell"
+	setup_usb_acm_configfs
+
+	# mount pstore, if possible
+	if [ -d /sys/fs/pstore ]; then
+		mount -t pstore pstore /sys/fs/pstore || true
+	fi
+
+	mount -t debugfs none /sys/kernel/debug || true
+	# make a symlink like Android recoveries do
+	ln -s /sys/kernel/debug /d
+
+	cat <<-EOF > /README
+	postmarketOS debug shell
+	https://postmarketos.org/debug-shell
+
+	  Device: $deviceinfo_name ($deviceinfo_codename)
+	  Kernel: $(uname -r)
+	  OS ver: $VERSION
+	  initrd: $INITRAMFS_PKG_VERSION
+
+	Run 'pmos_continue_boot' to continue booting.
+	Run 'pmos_logdump' to generate a log dump and expose it over USB.
+	EOF
+
+	if [ -f /usr/bin/setup_usb_storage ]; then
+		cat <<-EOF >> /README
+		You can expose storage devices over USB with
+		'setup_usb_storage /dev/DEVICE'
+		EOF
+	fi
+
+	# Display some info
+	cat <<-EOF > /etc/profile
+	cat /README
+	. /init_functions.sh
+	EOF
+
+	cat <<-EOF > /sbin/pmos_getty
+	#!/bin/sh
+	/bin/sh -l
+	EOF
+	chmod +x /sbin/pmos_getty
+
+	cat <<-EOF > /sbin/pmos_continue_boot
+	#!/bin/sh
+	echo "Continuing boot..."
+	touch /tmp/continue_boot
+	pkill -f telnetd.*:23
+	while sleep 1; do :; done
+	EOF
+	chmod +x /sbin/pmos_continue_boot
+
+	cat <<-EOF > /sbin/pmos_logdump
+	#!/bin/sh
+	echo "Dumping logs, check for a new mass storage device"
+	touch /tmp/dump_logs
+	EOF
+	chmod +x /sbin/pmos_logdump
+
+	# Get the console (ttyX) associated with /dev/console
+	active_console="$(cut -d ' ' -f1 < /sys/devices/virtual/tty/console/active)"
+
+	# Spawn a getty on the active console
+	run_getty "$active_console"
+
+	# Additional getty on the display if needed
+	hide_splash
+	if [ "$active_console" != "tty1" ]; then
+		run_getty tty1
+	fi
+
+	# And on the usb acm port (if it exists)
+	if [ -e /dev/ttyGS0 ] && [ "$active_console" != "ttyGS0" ]; then
+		run_getty ttyGS0
+	fi
+
+	# To avoid racing with the host PC opening the ACM port, we spawn
+	# the getty first. See the comment in run_getty for more details.
+	setup_usb_configfs_udc
+
+	# Spawn telnetd for those who prefer it. ACM gadget mode is not
+	# supported on some old kernels so this exists as a fallback.
+	telnetd -b "${HOST_IP}:23" -l /sbin/pmos_getty &
+
+	# wait until we get the signal to continue boot
+	while ! [ -e /tmp/continue_boot ]; do
+		sleep 0.2
+		if [ -e /tmp/dump_logs ]; then
+			rm -f /tmp/dump_logs
+			export_logs
+		fi
+	done
+
+	# Remove the ACM gadget device
+	# FIXME: would be nice to have a way to keep this on and
+	# pipe kernel/init logs to it.
+	rm -f $CONFIGFS/g1/configs/c.1/"$CONFIGFS_ACM_FUNCTION"
+	rmdir $CONFIGFS/g1/functions/"$CONFIGFS_ACM_FUNCTION"
+	setup_usb_configfs_udc
+
+	show_splash "Loading..."
+
+	pkill -f fbkeyboard || true
+}
+
+# Check if the user is pressing a key and either drop to a shell or halt boot as applicable
+# $1: If set, also trigger debug shell if "pmos.debug-shell" is in kernel cmdline
+check_keys() {
+	# If the user is pressing either the left control key or the volume down
+	# key then drop to a debug shell.
+	if { [ -n "$1" ] && grep -q "pmos.debug-shell" /proc/cmdline; } || iskey KEY_LEFTCTRL KEY_VOLUMEDOWN; then
+		debug_shell
+	# If instead they're pressing left shift or volume up, then fail boot
+	# and dump logs
+	elif iskey KEY_LEFTSHIFT KEY_VOLUMEUP; then
+		fail_halt_boot
+	fi
 }
 
 # $1: Message to show
@@ -929,6 +1100,7 @@ export_logs() {
 
 fail_halt_boot() {
 	export_logs
+	debug_shell
 	echo "Looping forever"
 	while true; do
 		sleep 1
