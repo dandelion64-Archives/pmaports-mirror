@@ -87,6 +87,9 @@ mount_boot_partition /sysroot/boot "rw"
 init="/sbin/init"
 setup_bootchart2
 
+# We might be showing "waiting for root partition", which is wrong
+show_splash ""
+
 # Restore stdout and stderr to their original values
 exec 1>&3 2>&4
 
