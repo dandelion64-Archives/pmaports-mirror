@@ -1,7 +1,7 @@
 # Maintainer: Oliver Smith <ollieparanoid@postmarketos.org>
 # Co-Maintainer: Clayton Craft <clayton@craftyguy.net>
 pkgname=postmarketos-initramfs
-pkgver=2.7.0
+pkgver=2.7.1
 pkgrel=0
 pkgdesc="Base files for the postmarketOS initramfs / initramfs-extra"
 url="https://postmarketos.org"
@@ -22,12 +22,13 @@ depends="
 	f2fs-tools
 	font-terminus
 	iskey
+	kmod
 	lz4
-	mdev-conf
 	multipath-tools
 	parted
 	postmarketos-fde-unlocker
 	postmarketos-mkinitfs>=2.2
+	udev
 	unudhcpd
 	util-linux-misc
 	xz
@@ -40,7 +41,6 @@ source="
 	init.sh
 	init_functions.sh
 	unudhcpd.conf
-	mdev.conf
 	"
 arch="noarch"
 license="GPL-2.0-or-later"
@@ -79,9 +79,6 @@ package() {
 		-t "$pkgdir"/usr/share/mkinitfs/files-extra/
 	mkdir -p "$pkgdir"/etc/mkinitfs/files-extra
 
-	install -Dm644 "$srcdir"/mdev.conf \
-		-t "$pkgdir"/usr/share/initramfs/
-
 	mkdir -p "$pkgdir"/usr/share/mkinitfs/hooks
 	mkdir -p "$pkgdir"/usr/share/mkinitfs/hooks-extra
 	mkdir -p "$pkgdir"/etc/mkinitfs/hooks
@@ -89,12 +86,11 @@ package() {
 }
 
 sha512sums="
-59be0649ed87a72d93624bd8a2e3f8c99a0f32f7b7a26f99436de782beba55671472c269eeee86440efc87e0d7148a0bb335fa537791092e73878ca21330544a  00-default.modules
+20bc7a21f4f59548b8179c5cb1fc2b3db64eb355988bce992db3bc4075d65b4135ff9dd7d754215d0402978811494449cce476a26cda6bb2f0f8b53ae8e36bd7  00-default.modules
 5b364300f31c91fd0591eb0715f67cbf5383f45246a5fb9f34b79f7cb2e3b15768b2130e5f32f816cc169950f988c1beabc879ba31645c58ce131a288dbc071d  00-initramfs-base.dirs
-0fed7dfdf940f5de15ca2fa636214d44ee8549afe5001b81beb0e337e865eb737916e158bc0ed7a7803adc81176386ae8edfc21150de62bb136fdfcdcb888b8b  00-initramfs-base.files
+97ca55f536fc98dd6d1f92094666ef4ea0ef19c1e31eba3a1b6fbf4ff8ebecad0a9abb0b15c6681500e423822aa401acc9675e08a1c00e062535ca2a2bfe18c2  00-initramfs-base.files
 8a4adad3785af474b36a09a05f6a3b2c4b4f43aac331a53b903abfa51ea12be1e3d1d807b7a6e66a1346815f3b0044daf8cd62e21e2dc75d2db13ee265a72985  00-initramfs-extra-base.files
-a8310cecb82cb507dcf32165c03761fafa237fb82d75793767e90c7307e916c9d0c0699bc1c407a3390e1b26561286e31445964059f7f927ac6e84192c86dd2f  init.sh
-b5dcb3575c2596d98fc2ef19197466076eadc73c652c0a1151a8894155f6bc2b759855e8c617624ee4fda3d863583742ac1d814d7aaa53bdaa5025f0c9a243f5  init_functions.sh
+ce2c28b18a5cdfc1a8ac02a796cb15d06688564fba9964fcae982e6e982e8a9d2c33310d1eac3942305efadde7c0493f73f93b8af612c0b3f75b2f3b3c8bc010  init.sh
+73441da4803f5d16728a5cc47ff8a539a5a946964ec460c6b9df266c5cd02b38ae2bf6cc7b8ce7d16d56d6165e48209b2db39262a96f59a4813813ded70a803c  init_functions.sh
 ba3275a9af788c7c782322a22a0f144d5e50e3498ea6886486a29331f23ae89cd32d500a3635cfa7cab369afba92edc18aeca64ccbf0cd589061cce23d15b46c  unudhcpd.conf
-675e7d5bee39b2df7d322117f8dcaccc274d61beaf4d50ead19bbf2109446d64b1c0aa0c5b4f9846eb6c1c403418f28f6364eff4537ba41120fbfcbc484b7da7  mdev.conf
 "
