@@ -33,6 +33,7 @@ subpackages="
 	pd-mapper-service:_service
 	phosh-service:_service
 	pipewire-service:_service
+	pipewire-pulse-service:_service
 	pulseaudio-service:_service
 	q6voiced-service:_service
 	qbootctl-service:_service
@@ -61,6 +62,7 @@ _openssh_server_pam_sources="system/sshd.service system/sshdgenkeys.service"
 _pd_mapper_sources="system/pd-mapper.service"
 _phosh_sources="system/phosh.service"
 _pipewire_sources="user/pipewire.service user/pipewire.socket"  # From https://gitlab.freedesktop.org/pipewire/pipewire/-/blob/master/src/daemon/systemd/user
+_pipewire_pulse_sources="user/pipewire-pulse.service user/pipewire-pulse.socket"  # From https://gitlab.freedesktop.org/pipewire/pipewire/-/blob/master/src/daemon/systemd/user
 _pulseaudio_sources="user/pulseaudio.service user/pulseaudio.socket"
 _q6voiced_sources="system/q6voiced.service"
 _qbootctl_sources="system/qbootctl.service"
@@ -101,6 +103,7 @@ source="$(flatpath \
 	$_pd_mapper_sources \
 	$_phosh_sources \
 	$_pipewire_sources \
+	$_pipewire_pulse_sources \
 	$_pulseaudio_sources \
 	$_q6voiced_sources \
 	$_qbootctl_sources \
@@ -148,6 +151,8 @@ c0badea3905c1d53d213fbfe11d25b556a2e484fe77eb50e9f4d42e25b67b56a0804e7d8e1b7731c
 5f53e07a48c64ab27deead4c1dc64dbea048de5632026d131e27e0fc3115723a1138d043199e2fdba9a281c420b3286a0aa96b063ed7f02c1153487ef732dd98  system-phosh.service
 3c3c93f7f618a1d2104cbaeea14bf1d2f60749176962150609bc8d7cb07cbbf490d8d5b0c72f358ffe5a918ad599cb1aca62338af026c1905efa57d71b465986  user-pipewire.service
 18293fe6523f58a7dddb7385c6cb18952e8d8ae8876c9523eb60303be3387fda08495ea60da11407d29d4ecd8ca3f7664ed8b633be189e3c68b9571a3d0d21e8  user-pipewire.socket
+1392055a818eb10482fa385888dfe18cc2997adb3db8617a66389ba816225327386510bbdabaed1e56f39383347a508465e91d2006783cfee96a0a5fa56e6261  user-pipewire-pulse.service
+87508179bc1771a77889d299dfb4a95ef14245fed513c771fb281043e720a924dc94b87c1a1d79e7d46cb3d2bec26809b2275b15796391f398f766c9c7f3596e  user-pipewire-pulse.socket
 416cdca1d43af8f7a9fcb5c04abdc666500f918fa5a6985736be6132da074aa1f322ba891d74eefaeff4b8911240a3942bf82ef21ec3ba0c1f10ccc37e6cea49  user-pulseaudio.service
 26c47085980e3f11f214d51846509f41ec9367360355b2d3fb40c7dc6e4394e04d084e645081d03c794669b902141513fbc6c3828b599588e308f98e28d99a92  user-pulseaudio.socket
 4c4c3f1e5e829ff67dd35df59120ab59730ff1f1ca0aab93f16d670132979a99099fad59e6c736908cc19df9172c9bdfe476ec721a1cc28de8c2210da46ce1f1  system-q6voiced.service
