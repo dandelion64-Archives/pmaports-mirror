@@ -1,0 +1,387 @@
+From 3baaeba00b5a0f32a9a45fb958de4a3eab759489 Mon Sep 17 00:00:00 2001
+From: Dylan Van Assche <me@dylanvanassche.be>
+Date: Thu, 9 Feb 2023 21:20:54 +0100
+Subject: [PATCH 09/11] fbd-dev-led-qcom: Support QCOM LPG LED single color
+
+QCOM LPG LEDs expose a hw_pattern sysfs entry which accepts a limited
+set of patterns but allows to use dedicated hardware for blinking the
+LED. This way, battery life can be improved and the LED still blinks,
+even if the device is suspended.
+---
+ src/fbd-dev-led-qcom-priv.h                  |  16 +++
+ src/fbd-dev-led-qcom.c                       | 118 +++++++++++++++++++
+ src/fbd-dev-led-qcom.h                       |  18 +++
+ src/meson.build                              |   1 +
+ tests/data/umockdev/led-qcom-simple.umockdev | 118 +++++++++++++++++++
+ tests/test-fbd-dev-led.c                     |  31 +++++
+ 6 files changed, 302 insertions(+)
+ create mode 100644 src/fbd-dev-led-qcom-priv.h
+ create mode 100644 src/fbd-dev-led-qcom.c
+ create mode 100644 src/fbd-dev-led-qcom.h
+ create mode 100644 tests/data/umockdev/led-qcom-simple.umockdev
+
+diff --git a/src/fbd-dev-led-qcom-priv.h b/src/fbd-dev-led-qcom-priv.h
+new file mode 100644
+index 0000000..1ff3a9a
+--- /dev/null
++++ b/src/fbd-dev-led-qcom-priv.h
+@@ -0,0 +1,16 @@
++/*
++ * Copyright (C) 2023 Dylan Van Assche <me@dylanvanassche.be>
++ *
++ * SPDX-License-Identifier: GPL-3.0+
++ */
++#pragma once
++
++#include "fbd-dev-led-qcom.h"
++
++#include <glib-object.h>
++
++G_BEGIN_DECLS
++
++gboolean fbd_dev_led_probe_qcom (FbdDevLed *led, GError **error);
++
++G_END_DECLS
+diff --git a/src/fbd-dev-led-qcom.c b/src/fbd-dev-led-qcom.c
+new file mode 100644
+index 0000000..5115f8d
+--- /dev/null
++++ b/src/fbd-dev-led-qcom.c
+@@ -0,0 +1,118 @@
++/*
++ * Copyright (C) 2023 Dylan Van Assche <me@dylanvanassche.be>
++ *
++ * SPDX-License-Identifier: GPL-3.0+
++ */
++
++#define G_LOG_DOMAIN "fbd-dev-led-qcom"
++
++#include "fbd-dev-led-priv.h"
++#include "fbd-dev-led-qcom.h"
++#include "fbd-dev-led-qcom-priv.h"
++#include "fbd-enums.h"
++#include "fbd-udev.h"
++
++#include <gio/gio.h>
++
++#define LED_HW_PATTERN_ATTR   "hw_pattern"
++#define LED_REPEAT_ATTR       "repeat"
++#define LED_REPEAT_INFINITY   "-1"
++#define QCOM_LPG_MAX_PAUSE_MS 511
++
++typedef struct _FbdDevLedQcom {
++  FbdDevLed parent;
++} FbdDevLedQcom;
++
++
++G_DEFINE_TYPE (FbdDevLedQcom, fbd_dev_led_qcom, FBD_TYPE_DEV_LED)
++
++
++static gboolean
++fbd_dev_led_qcom_probe (FbdDevLed *led, GError **error)
++{
++  GUdevDevice *dev = fbd_dev_led_get_device (led);
++  const gchar *name;
++  const gchar * const *index;
++
++  name = g_udev_device_get_name (dev);
++
++  index = g_udev_device_get_sysfs_attr_as_strv (dev, LED_HW_PATTERN_ATTR);
++  if (index == NULL) {
++    g_set_error (error,
++               G_FILE_ERROR, G_FILE_ERROR_FAILED,
++               "%s is no QCOM LED with HW support", name);
++    return FALSE;
++  }
++
++  return FBD_DEV_LED_CLASS (fbd_dev_led_qcom_parent_class)->probe(led, error);
++}
++
++
++static gboolean
++fbd_dev_led_qcom_start_periodic (FbdDevLed *led,
++                                 guint      max_brightness_percentage,
++                                 guint      freq)
++{
++  GUdevDevice *dev = fbd_dev_led_get_device (led);
++  gdouble max;
++  gdouble t;
++  g_autofree gchar *str = NULL;
++  g_autoptr (GError) err = NULL;
++  gboolean success;
++
++  g_return_val_if_fail (max_brightness_percentage <= 100.0, FALSE);
++  max = fbd_dev_led_get_max_brightness (led) * (max_brightness_percentage / 100.0);
++
++  g_debug ("Using hw_pattern interface for QCOM LPG LED");
++
++  /* QCOM LPG LEDs can only pause up to 511ms */
++  /*  ms     mHz           T/2 */
++  t = 1000.0 * 1000.0 / freq / 2.0;
++  if (t > QCOM_LPG_MAX_PAUSE_MS)
++    t = QCOM_LPG_MAX_PAUSE_MS;
++
++  str = g_strdup_printf ("0 %d 0 0 %d %d %d 0\n", (gint)t, (gint)max, (gint)t, (gint)max);
++
++  success = fbd_udev_set_sysfs_path_attr_as_string (dev, LED_REPEAT_ATTR, LED_REPEAT_INFINITY, &err);
++  if (!success) {
++    g_warning ("Failed to set LED repeat: %s", err->message);
++    goto failure;
++  }
++
++  success = fbd_udev_set_sysfs_path_attr_as_string (dev, LED_HW_PATTERN_ATTR, str, &err);
++  if (!success) {
++    g_warning ("Failed to set LED hw_pattern: %s", err->message);
++    goto failure;
++  }
++
++  g_debug ("Freq %d mHz, Brightness: %d%%, Blink pattern: %s, HW: yes", freq, max_brightness_percentage, str);
++  return TRUE;
++
++failure:
++  g_warning("Falling back to software pattern");
++  return FBD_DEV_LED_CLASS (fbd_dev_led_qcom_parent_class)->start_periodic (
++    led, max_brightness_percentage, freq);
++}
++
++
++static void
++fbd_dev_led_qcom_class_init (FbdDevLedQcomClass *klass)
++{
++  FbdDevLedClass *fbd_dev_led_class = FBD_DEV_LED_CLASS (klass);
++
++  fbd_dev_led_class->probe = fbd_dev_led_qcom_probe;
++  fbd_dev_led_class->start_periodic = fbd_dev_led_qcom_start_periodic;
++}
++
++
++static void
++fbd_dev_led_qcom_init (FbdDevLedQcom *self)
++{
++}
++
++
++FbdDevLed *
++fbd_dev_led_qcom_new (GUdevDevice *dev, GError **err)
++{
++  return g_initable_new (FBD_TYPE_DEV_LED_QCOM, NULL, err, "dev", dev, NULL);
++}
+diff --git a/src/fbd-dev-led-qcom.h b/src/fbd-dev-led-qcom.h
+new file mode 100644
+index 0000000..ad77c9f
+--- /dev/null
++++ b/src/fbd-dev-led-qcom.h
+@@ -0,0 +1,18 @@
++/*
++ * Copyright (C) 2023 Dylan Van Assche <me@dylanvanassche.be>
++ *
++ * SPDX-License-Identifier: GPL-3.0+
++ */
++#pragma once
++
++#include "fbd-dev-led.h"
++
++G_BEGIN_DECLS
++
++#define FBD_TYPE_DEV_LED_QCOM fbd_dev_led_qcom_get_type()
++
++G_DECLARE_FINAL_TYPE (FbdDevLedQcom, fbd_dev_led_qcom, FBD, DEV_LED_QCOM, FbdDevLed)
++
++FbdDevLed          *fbd_dev_led_qcom_new  (GUdevDevice *dev, GError **err);
++
++G_END_DECLS
+diff --git a/src/meson.build b/src/meson.build
+index 8d2dcdb..fdbc07e 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -17,6 +17,7 @@ sources = [
+   'fbd-dev-sound.c',
+   'fbd-dev-led.c',
+   'fbd-dev-led-multicolor.c',
++  'fbd-dev-led-qcom.c',
+   'fbd-dev-leds.c',
+   'fbd-event.c',
+   'fbd-feedback-base.c',
+diff --git a/tests/data/umockdev/led-qcom-simple.umockdev b/tests/data/umockdev/led-qcom-simple.umockdev
+new file mode 100644
+index 0000000..0883590
+--- /dev/null
++++ b/tests/data/umockdev/led-qcom-simple.umockdev
+@@ -0,0 +1,118 @@
++P: /devices/platform/soc@0/c440000.spmi/spmi-0/0-03/c440000.spmi:pmic@3:pwm/leds/white:status
++E: FEEDBACKD_TYPE=led
++E: ID_FOR_SEAT=leds-platform-c440000_spmi-platform-c440000_spmi_pmic_3_pwm
++E: ID_PATH=platform-c440000.spmi-platform-c440000.spmi:pmic@3:pwm
++E: ID_PATH_TAG=platform-c440000_spmi-platform-c440000_spmi_pmic_3_pwm
++E: OF_COMPATIBLE_N=0
++E: OF_FULLNAME=/soc@0/spmi@c440000/pmic@3/pwm/led@5
++E: OF_NAME=led
++E: SUBSYSTEM=leds
++E: TAGS=:seat:
++A: brightness=0\n
++L: device=../../../c440000.spmi:pmic@3:pwm
++A: hw_pattern=
++A: max_brightness=511\n
++A: pattern=
++A: power/control=auto\n
++A: power/runtime_active_time=0\n
++A: power/runtime_status=unsupported\n
++A: power/runtime_suspended_time=0\n
++A: repeat=-1\n
++A: trigger=none kbd-scrolllock kbd-numlock kbd-capslock kbd-kanalock kbd-shiftlock kbd-altgrlock kbd-ctrllock kbd-altlock kbd-shiftllock kbd-shiftrlock kbd-ctrlllock kbd-ctrlrlock timer oneshot heartbeat backlight cpu cpu0 cpu1 cpu2 cpu3 cpu4 cpu5 cpu6 cpu7 activity default-on panic [pattern] mmc0 rfkill-any rfkill-none bluetooth-power hci0-power rfkill0 pmi8998-charger-online qcom-battery-charging-or-full qcom-battery-charging qcom-battery-full qcom-battery-charging-blink-full-solid phy0rx phy0tx phy0assoc phy0radio rfkill1\n
++
++P: /devices/platform/soc@0/c440000.spmi/spmi-0/0-03/c440000.spmi:pmic@3:pwm
++E: DRIVER=qcom-spmi-lpg
++E: MODALIAS=of:NpwmT(null)Cqcom,pmi8998-lpg
++E: OF_COMPATIBLE_0=qcom,pmi8998-lpg
++E: OF_COMPATIBLE_N=1
++E: OF_FULLNAME=/soc@0/spmi@c440000/pmic@3/pwm
++E: OF_NAME=pwm
++E: SUBSYSTEM=platform
++L: driver=../../../../../../../bus/platform/drivers/qcom-spmi-lpg
++A: driver_override=(null)\n
++A: modalias=of:NpwmT(null)Cqcom,pmi8998-lpg\n
++L: of_node=../../../../../../../firmware/devicetree/base/soc@0/spmi@c440000/pmic@3/pwm
++A: power/control=auto\n
++A: power/runtime_active_time=0\n
++A: power/runtime_status=unsupported\n
++A: power/runtime_suspended_time=0\n
++
++P: /devices/platform/soc@0/c440000.spmi/spmi-0/0-03
++E: DRIVER=pmic-spmi
++E: MODALIAS=of:NpmicT(null)Cqcom,pmi8998Cqcom,spmi-pmic
++E: OF_COMPATIBLE_0=qcom,pmi8998
++E: OF_COMPATIBLE_1=qcom,spmi-pmic
++E: OF_COMPATIBLE_N=2
++E: OF_FULLNAME=/soc@0/spmi@c440000/pmic@3
++E: OF_NAME=pmic
++E: SUBSYSTEM=spmi
++L: driver=../../../../../../bus/spmi/drivers/pmic-spmi
++L: of_node=../../../../../../firmware/devicetree/base/soc@0/spmi@c440000/pmic@3
++A: power/control=auto\n
++A: power/runtime_active_time=124723680\n
++A: power/runtime_status=active\n
++A: power/runtime_suspended_time=0\n
++
++P: /devices/platform/soc@0/c440000.spmi/spmi-0
++E: MODALIAS=of:NspmiT(null)Cqcom,spmi-pmic-arb
++E: OF_COMPATIBLE_0=qcom,spmi-pmic-arb
++E: OF_COMPATIBLE_N=1
++E: OF_FULLNAME=/soc@0/spmi@c440000
++E: OF_NAME=spmi
++E: SUBSYSTEM=spmi
++L: of_node=../../../../../firmware/devicetree/base/soc@0/spmi@c440000
++A: power/control=auto\n
++A: power/runtime_active_time=0\n
++A: power/runtime_status=unsupported\n
++A: power/runtime_suspended_time=0\n
++
++P: /devices/platform/soc@0/c440000.spmi
++E: DRIVER=spmi_pmic_arb
++E: MODALIAS=of:NspmiT(null)Cqcom,spmi-pmic-arb
++E: OF_COMPATIBLE_0=qcom,spmi-pmic-arb
++E: OF_COMPATIBLE_N=1
++E: OF_FULLNAME=/soc@0/spmi@c440000
++E: OF_NAME=spmi
++E: SUBSYSTEM=platform
++L: consumer:platform:c440000.spmi:pmic@0:adc@3100=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@0:adc@3100
++L: consumer:platform:c440000.spmi:pmic@0:pon@800:pwrkey=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@0:pon@800:pwrkey
++L: consumer:platform:c440000.spmi:pmic@0:pon@800:resin=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@0:pon@800:resin
++L: consumer:platform:c440000.spmi:pmic@0:rtc@6000=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@0:rtc@6000
++L: consumer:platform:c440000.spmi:pmic@0:temp-alarm@2400=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@0:temp-alarm@2400
++L: consumer:platform:c440000.spmi:pmic@2:charger@1000=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@2:charger@1000
++L: consumer:platform:c440000.spmi:pmic@2:fuel-gauge@4000=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@2:fuel-gauge@4000
++L: consumer:platform:c440000.spmi:pmic@3:haptics@c000=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@3:haptics@c000
++L: consumer:platform:c440000.spmi:pmic@3:leds@d800=../../../virtual/devlink/platform:c440000.spmi--platform:c440000.spmi:pmic@3:leds@d800
++L: driver=../../../../bus/platform/drivers/spmi_pmic_arb
++A: driver_override=(null)\n
++A: modalias=of:NspmiT(null)Cqcom,spmi-pmic-arb\n
++L: of_node=../../../../firmware/devicetree/base/soc@0/spmi@c440000
++A: power/control=auto\n
++A: power/runtime_active_time=0\n
++A: power/runtime_status=unsupported\n
++A: power/runtime_suspended_time=0\n
++
++P: /devices/platform/soc@0
++E: DRIVER=simple-pm-bus
++E: MODALIAS=of:NsocT(null)Csimple-bus
++E: OF_COMPATIBLE_0=simple-bus
++E: OF_COMPATIBLE_N=1
++E: OF_FULLNAME=/soc@0
++E: OF_NAME=soc
++E: SUBSYSTEM=platform
++L: consumer:platform:17c90000.timer=../../virtual/devlink/platform:soc@0--platform:17c90000.timer
++L: consumer:platform:894000.i2c=../../virtual/devlink/platform:soc@0--platform:894000.i2c
++L: consumer:platform:898000.serial=../../virtual/devlink/platform:soc@0--platform:898000.serial
++L: consumer:platform:a600000.usb=../../virtual/devlink/platform:soc@0--platform:a600000.usb
++L: consumer:platform:a84000.serial=../../virtual/devlink/platform:soc@0--platform:a84000.serial
++L: consumer:platform:a98000.i2c=../../virtual/devlink/platform:soc@0--platform:a98000.i2c
++L: driver=../../../bus/platform/drivers/simple-pm-bus
++A: driver_override=(null)\n
++A: modalias=of:NsocT(null)Csimple-bus\n
++L: of_node=../../../firmware/devicetree/base/soc@0
++A: power/control=auto\n
++A: power/runtime_active_time=0\n
++A: power/runtime_status=unsupported\n
++A: power/runtime_suspended_time=0\n
++
++
+diff --git a/tests/test-fbd-dev-led.c b/tests/test-fbd-dev-led.c
+index 533accd..6ccc08d 100644
+--- a/tests/test-fbd-dev-led.c
++++ b/tests/test-fbd-dev-led.c
+@@ -8,6 +8,7 @@
+ #include "fbd-feedback-led.h"
+ #include "fbd-dev-led.h"
+ #include "fbd-dev-led-multicolor.h"
++#include "fbd-dev-led-qcom.h"
+ 
+ #include "testlib.h"
+ 
+@@ -67,6 +68,33 @@ test_fbd_dev_led_multicolor (FbdUmockdevFixture *fixture, gconstpointer unused)
+ }
+ 
+ 
++static void
++test_fbd_dev_led_qcom_simple (FbdUmockdevFixture *fixture, gconstpointer unused)
++{
++  GUdevClient *client;
++  g_autolist (GUdevDevice) leds = NULL;
++  FbdDevLed *led;
++  g_autoptr (GError) err = NULL;
++  GUdevDevice *dev;
++
++  client = g_udev_client_new ((const char *const []){ "leds", NULL});
++  leds = g_udev_client_query_by_subsystem (client, "leds");
++
++  /* There should be a single device only */
++  g_assert_cmpint (g_list_length (leds), ==, 1);
++  dev = G_UDEV_DEVICE (leds->data);
++
++  g_assert_cmpstr (g_udev_device_get_property (dev, "FEEDBACKD_TYPE"), ==, "led");
++
++  led = fbd_dev_led_qcom_new (dev, &err);
++  g_assert_no_error (err);
++  g_assert_cmpint (fbd_dev_led_get_max_brightness (led), ==, 511);
++  g_assert_true (fbd_dev_led_supports_color (led, FBD_FEEDBACK_LED_COLOR_WHITE));
++  g_assert_true (fbd_dev_led_start_periodic (led, 50, 50));
++  g_assert_finalize_object (led);
++}
++
++
+ gint
+ main (gint argc, gchar *argv[])
+ {
+@@ -78,6 +106,9 @@ main (gint argc, gchar *argv[])
+   FBD_UMOCKDEV_TEST_ADD ("/feedbackd/fbd/dev/led/multicolor",
+                          test_fbd_dev_led_multicolor,
+                          "led-multicolor");
++  FBD_UMOCKDEV_TEST_ADD ("/feedbackd/fbd/dev/led/qcom/simple",
++                         test_fbd_dev_led_qcom_simple,
++                         "led-qcom-simple");
+ 
+   return g_test_run();
+ }
+-- 
+2.45.1
+

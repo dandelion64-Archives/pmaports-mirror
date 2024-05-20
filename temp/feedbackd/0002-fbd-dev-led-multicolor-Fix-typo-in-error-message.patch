@@ -1,0 +1,26 @@
+From 088c353e793a1243d44f4d3b450152b2bf67da6b Mon Sep 17 00:00:00 2001
+From: Dylan Van Assche <me@dylanvanassche.be>
+Date: Sun, 19 May 2024 18:46:08 +0200
+Subject: [PATCH 02/11] fbd-dev-led-multicolor: Fix typo in error message
+
+multicololo -> multicolor LED
+---
+ src/fbd-dev-led-multicolor.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/fbd-dev-led-multicolor.c b/src/fbd-dev-led-multicolor.c
+index 425ee4f..30a89ef 100644
+--- a/src/fbd-dev-led-multicolor.c
++++ b/src/fbd-dev-led-multicolor.c
+@@ -53,7 +53,7 @@ fbd_dev_led_probe_multicolor (FbdDevLed *led, GError **error)
+   if (index == NULL) {
+     g_set_error (error,
+                  G_FILE_ERROR, G_FILE_ERROR_FAILED,
+-                 "%s is no multicololor LED", name);
++                 "%s is no multicolor LED", name);
+     return FALSE;
+   }
+ 
+-- 
+2.45.1
+
