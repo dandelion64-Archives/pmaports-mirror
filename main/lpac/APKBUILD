@@ -1,7 +1,6 @@
 # Contributor: Paul Sajna <hello@paulsajna.com>
-# Maintainer:
 pkgname=lpac
-pkgver=2.0.1.r23
+pkgver=2.0.1_git20240519
 pkgrel=0
 pkgdesc="lpac is a cross-platform local profile agent program, compatible with SGP.22 version 2.2.2."
 url="https://github.com/estkme-group/lpac"
@@ -14,7 +13,7 @@ source="https://github.com/estkme-group/lpac/archive/$_commit.tar.gz"
 builddir="$srcdir/lpac-$_commit"
 
 build() {
-	CMAKE_BUILD_TYPE=Release cmake -DCMAKE_INSTALL_PREFIX=/usr -DLPAC_WITH_APDU_QMI_QRTR=ON -DLPAC_WITH_APDU_AT=OFF -DLPAC_WITH_APDU_PCSC=OFF -G Ninja
+	cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DLPAC_WITH_APDU_QMI_QRTR=ON -DLPAC_WITH_APDU_AT=OFF -DLPAC_WITH_APDU_PCSC=OFF -G Ninja
 	ninja
 }
 
