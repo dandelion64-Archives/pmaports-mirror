@@ -5,7 +5,7 @@ ROOT_PARTITION_RESIZED=0
 PMOS_BOOT=""
 PMOS_ROOT=""
 
-CONFIGFS=/config/usb_gadget
+CONFIGFS="/config/usb_gadget"
 CONFIGFS_ACM_FUNCTION="acm.usb0"
 HOST_IP="${unudhcpd_host_ip:-172.16.42.1}"
 
@@ -69,31 +69,19 @@ setup_firmware_path() {
 	echo -n /lib/firmware/postmarketos >$SYS
 }
 
-# shellcheck disable=SC3043
-load_modules() {
-	local file="$1"
-	local modules="$2"
-	[ -f "$file" ] && modules="$modules $(grep -v ^\# "$file")"
-	# shellcheck disable=SC2086
-	modprobe -a $modules
-}
-
-setup_mdev() {
-	# Start mdev daemon
-	mdev -d
-}
-
 setup_udev() {
-	# Use udev to coldplug all devices so that they can be used via libinput (e.g.
-	# by unl0kr). This is the same series of steps performed by the udev,
+	if ! command -v udevd > /dev/null || ! command -v udevadm > /dev/null; then
+		echo "ERROR: udev not found!"
+		return
+	fi
+
+	# This is the same series of steps performed by the udev,
 	# udev-trigger and udev-settle RC services. See also:
 	# - https://git.alpinelinux.org/aports/tree/main/eudev/setup-udev
 	# - https://git.alpinelinux.org/aports/tree/main/udev-init-scripts/APKBUILD
-	if command -v udevd > /dev/null && command -v udevadm > /dev/null; then
-		udevd -d
-		udevadm trigger --type=devices --action=add
-		udevadm settle
-	fi
+	udevd -d --resolve-names=never
+	udevadm trigger --type=devices --action=add
+	udevadm settle
 }
 
 get_uptime_seconds() {
@@ -131,7 +119,7 @@ mount_subpartitions() {
 	attempt_start=$(get_uptime_seconds)
 	wait_seconds=10
 	echo "Trying to mount subpartitions for $wait_seconds seconds..."
-	while [ -z "$(find_boot_partition)" ]; do
+	while [ -z "$(find_root_partition)" ]; do
 		partitions="$android_parts $(grep -v "loop\|ram" < /proc/diskstats |\
 			sed 's/\(\s\+[0-9]\+\)\+\s\+//;s/ .*//;s/^/\/dev\//')"
 		for partition in $partitions; do
@@ -142,7 +130,7 @@ mount_subpartitions() {
 					# Ensure that this was the *correct* subpartition
 					# Some devices have mmc partitions that appear to have
 					# subpartitions, but aren't our subpartition.
-					if [ -n "$(find_boot_partition)" ]; then
+					if [ -n "$(find_root_partition)" ]; then
 						break
 					fi
 					kpartx -d "$partition"
@@ -377,23 +365,41 @@ extract_initramfs_extra() {
 }
 
 wait_boot_partition() {
-	while [ -z "$(find_boot_partition)" ]; do
-		show_splash "ERROR: boot partition not found, retrying...\\nhttps://postmarketos.org/troubleshooting"
-		echo "Could not find the boot partition."
-		echo "If your install is on a removable disk, maybe you need to insert it?"
-		echo "Trying again..."
+	find_boot_partition
+	if [ -n "$PMOS_BOOT" ]; then
+		return
+	fi
+
+	show_splash "Waiting for boot partition..."
+	for _ in $(seq 1 30); do
+		if [ -n "$(find_boot_partition)" ]; then
+			return
+		fi
 		sleep 1
+		check_keys ""
 	done
+
+	show_splash "ERROR: Boot partition not found!\\nhttps://postmarketos.org/troubleshooting"
+	fail_halt_boot
 }
 
 wait_root_partition() {
-	while [ -z "$(find_root_partition)" ]; do
-		show_splash "ERROR: root partition not found, retrying...\\nhttps://postmarketos.org/troubleshooting"
-		echo "Could not find the rootfs."
-		echo "If your install is on a removable disk, maybe you need to insert it?"
-		echo "Trying again..."
+	find_root_partition
+	if [ -n "$PMOS_ROOT" ]; then
+		return
+	fi
+
+	show_splash "Waiting for root partition..."
+	for _ in $(seq 1 30); do
+		if [ -n "$(find_root_partition)" ]; then
+			return
+		fi
 		sleep 1
+		check_keys ""
 	done
+
+	show_splash "ERROR: Root partition not found!\\nhttps://postmarketos.org/troubleshooting"
+	fail_halt_boot
 }
 
 delete_old_install_partition() {
@@ -631,11 +637,11 @@ setup_usb_configfs_udc() {
 
 	# Remove any existing UDC to avoid "write error: Resource busy" when setting UDC again
 	if [ "$(wc -w <$CONFIGFS/g1/UDC)" -gt 0 ]; then
-		echo "" > /config/usb_gadget/g1/UDC || echo "  Couldn't write to clear UDC"
+		echo "" > "$CONFIGFS"/g1/UDC || echo "  Couldn't write to clear UDC"
 	fi
 	# Link the gadget instance to an USB Device Controller. This activates the gadget.
 	# See also: https://gitlab.com/postmarketOS/pmbootstrap/issues/338
-	echo "$_udc_dev" > /config/usb_gadget/g1/UDC || echo "  Couldn't write new UDC"
+	echo "$_udc_dev" > "$CONFIGFS"/g1/UDC || echo "  Couldn't write new UDC"
 }
 
 # $1: if set, skip writing to the UDC
@@ -644,7 +650,7 @@ setup_usb_network_configfs() {
 	local skip_udc="$1"
 
 	if ! [ -e "$CONFIGFS" ]; then
-		echo "  /config/usb_gadget does not exist, skipping configfs usb gadget"
+		echo "$CONFIGFS does not exist, skipping configfs usb gadget"
 		return
 	fi
 
@@ -728,10 +734,10 @@ start_unudhcpd() {
 	# Get usb interface
 	usb_network_function="${deviceinfo_usb_network_function:-ncm.usb0}"
 	usb_network_function_fallback="rndis.usb0"
-	if [ -n "$(cat /config/usb_gadget/g1/UDC)" ]; then
+	if [ -n "$(cat $CONFIGFS/g1/UDC)" ]; then
 		INTERFACE="$(
-			cat "/config/usb_gadget/g1/functions/$usb_network_function/ifname" 2>/dev/null ||
-			cat "/config/usb_gadget/g1/functions/$usb_network_function_fallback/ifname" 2>/dev/null ||
+			cat "$CONFIGFS/g1/functions/$usb_network_function/ifname" 2>/dev/null ||
+			cat "$CONFIGFS/g1/functions/$usb_network_function_fallback/ifname" 2>/dev/null ||
 			echo ''
 		)"
 	else
@@ -765,12 +771,12 @@ setup_usb_acm_configfs() {
 	active_udc="$(cat $CONFIGFS/g1/UDC)"
 
 	if ! [ -e "$CONFIGFS" ]; then
-		echo "  /config/usb_gadget does not exist, can't set up serial gadget"
+		echo "  $CONFIGFS does not exist, can't set up serial gadget"
 		return 1
 	fi
 
 	# unset UDC
-	echo "" > /config/usb_gadget/g1/UDC
+	echo "" > $CONFIGFS/g1/UDC
 
 	# Create acm function
 	mkdir "$CONFIGFS/g1/functions/$CONFIGFS_ACM_FUNCTION" \
@@ -876,11 +882,13 @@ debug_shell() {
 
 	# Additional getty on the display if needed
 	hide_splash
+	modprobe uinput
+	buffyboard &
 	if [ "$active_console" != "tty1" ]; then
 		run_getty tty1
 	fi
 
-	# And on the usb acm port (if it exists)
+	# Also spawn a getty on the usb acm port (if it exists)
 	if [ -e /dev/ttyGS0 ] && [ "$active_console" != "ttyGS0" ]; then
 		run_getty ttyGS0
 	fi
@@ -911,7 +919,7 @@ debug_shell() {
 
 	show_splash "Loading..."
 
-	pkill -f fbkeyboard || true
+	pkill -f buffyboard || true
 }
 
 # Check if the user is pressing a key and either drop to a shell or halt boot as applicable
@@ -1072,7 +1080,7 @@ create_logs_disk() {
 export_logs() {
 	local loop_dev=""
 	usb_mass_storage_function="mass_storage.0"
-	active_udc="$(cat /config/usb_gadget/g1/UDC)"
+	active_udc="$(cat $CONFIGFS/g1/UDC)"
 
 	loop_dev="$(losetup -f)"
 
@@ -1085,7 +1093,7 @@ export_logs() {
 		setup_usb_network_configfs "skip_udc"
 	else
 		# Unset UDC
-		echo "" > /config/usb_gadget/g1/UDC
+		echo "" > $CONFIGFS/g1/UDC
 	fi
 
 	mkdir "$CONFIGFS"/g1/functions/"$usb_mass_storage_function" || return
