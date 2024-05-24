@@ -2,13 +2,14 @@
 pkgname=soc-qcom-sc7280
 pkgdesc="Common package for Qualcomm SC7280/SM7325/QCM6490 devices"
 pkgver=1
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="BSD-3-Clause"
 arch="aarch64"
 options="!check !archcheck !tracedeps"
 depends="
 	bootmac
+	kmod
 	linux-firmware-ath11k
 	msm-modem
 	msm-modem-uim-selection
@@ -24,8 +25,15 @@ subpackages="
 	$pkgname-vulkan
 "
 
+source="
+	10-initramfs-sc7280.files
+"
+
 package() {
 	mkdir -p "$pkgdir"
+
+	install -Dm644 "$srcdir"/10-initramfs-sc7280.files \
+		-t "$pkgdir"/usr/share/mkinitfs/files/
 }
 
 qbootctl() {
@@ -44,4 +52,6 @@ vulkan() {
 	depends="mesa-vulkan-freedreno"
 	mkdir "$subpkgdir"
 }
-
+sha512sums="
+56845726c5e7b685953f96c381404181ad9b70ea7dbfe5a3d963fb6f15821addaead43a65c9b140cb938c2d45173cfb5421816bd36024fd7e1b8555e0b32622f  10-initramfs-sc7280.files
+"
