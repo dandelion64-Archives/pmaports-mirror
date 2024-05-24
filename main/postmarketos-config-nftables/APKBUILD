@@ -1,12 +1,11 @@
 # Maintainer: Clayton Craft <clayton@craftyguy.net>
 pkgname=postmarketos-config-nftables
 pkgver=0.16
-pkgrel=0
+pkgrel=1
 pkgdesc="nftables firewall configuration for postmarketOS"
 url="https://gitlab.com/postmarketos"
 arch="noarch"
 license="MIT"
-depends="nftables-openrc"
 subpackages="
 	$pkgname-openusb:openusb
 	$pkgname-log:log
