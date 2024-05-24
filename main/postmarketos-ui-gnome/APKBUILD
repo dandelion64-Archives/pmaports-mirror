@@ -2,7 +2,7 @@
 # Maintainer: Oliver Smith <ollieparanoid@postmarketos.org>
 pkgname=postmarketos-ui-gnome
 pkgver=3
-pkgrel=9
+pkgrel=10
 pkgdesc="(Wayland) Gnome Shell"
 url="https://gnome.org/"
 # armhf blocked by gnome-shell -> gjs -> mozjs102
@@ -23,8 +23,10 @@ _pmb_recommends="
 	gnome-extensions-app
 	gnome-system-monitor
 	nautilus
+	snapshot
 	"
 install="$pkgname.post-install $pkgname.post-upgrade"
+subpackages="$pkgname-extras"
 source="firefox-wayland.sh"
 options="!check"
 
@@ -32,6 +34,15 @@ package() {
 	install -Dm755 \
 		"$srcdir"/firefox-wayland.sh \
 		-t "$pkgdir"/etc/profile.d/
+}
+
+extras() {
+	pkgdesc="Meta package for additional GNOME apps"
+	_pmb_recommends="
+		gnome-podcasts
+		"
+
+	mkdir -p "$subpkgdir"
 }
 sha512sums="
 0d9ec58be7dc354e181989c7f08e7d4dd93fefd06a99e784b87fe898479dd47a40dfa9689c6a63ebdc04bf87883a270686aec27f7cc34cb21ec0f370a4afe2d8  firefox-wayland.sh
