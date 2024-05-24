@@ -1,0 +1,26 @@
+From 561e2059619fd8fc566d84d09d5d581c90b46a50 Mon Sep 17 00:00:00 2001
+From: Dylan Van Assche <me@dylanvanassche.be>
+Date: Fri, 10 Feb 2023 14:22:10 +0100
+Subject: [PATCH 01/11] fbd-dev-led-multicolor: Use separate log domain
+
+Debugging driver probing is much easier when each driver has its own log domain.
+---
+ src/fbd-dev-led-multicolor.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/fbd-dev-led-multicolor.c b/src/fbd-dev-led-multicolor.c
+index d48ddc0..425ee4f 100644
+--- a/src/fbd-dev-led-multicolor.c
++++ b/src/fbd-dev-led-multicolor.c
+@@ -6,7 +6,7 @@
+  * See Documentation/ABI/testing/sysfs-class-led-trigger-pattern
+  */
+ 
+-#define G_LOG_DOMAIN "fbd-dev-led"
++#define G_LOG_DOMAIN "fbd-dev-led-multicolor"
+ 
+ #include "fbd-dev-led-priv.h"
+ #include "fbd-dev-led-multicolor.h"
+-- 
+2.45.1
+

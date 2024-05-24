@@ -1,0 +1,35 @@
+From d09ca4a828d9f529f831d0113f1154cd3cfc9fd3 Mon Sep 17 00:00:00 2001
+From: Dylan Van Assche <me@dylanvanassche.be>
+Date: Thu, 9 Feb 2023 21:15:53 +0100
+Subject: [PATCH 07/11] fbd-dev-led: Check max_brightness_percentage range
+
+Percentages are always between 0.0 and 100.0.
+Also fix a typo along the way.
+---
+ src/fbd-dev-led.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/fbd-dev-led.c b/src/fbd-dev-led.c
+index cf6b9ed..f3b942f 100644
+--- a/src/fbd-dev-led.c
++++ b/src/fbd-dev-led.c
+@@ -85,7 +85,7 @@ fbd_dev_led_probe_default (FbdDevLed *led, GError **error)
+   if (!success) {
+     g_set_error (error,
+                  G_FILE_ERROR, G_FILE_ERROR_FAILED,
+-                 "%s not usable as RBG LED", name);
++                 "%s not usable as RGB LED", name);
+   }
+ 
+   return success;
+@@ -127,6 +127,7 @@ fbd_dev_led_start_periodic_default (FbdDevLed *led,
+   gdouble t;
+ 
+   g_return_val_if_fail (FBD_IS_DEV_LED (led), FALSE);
++  g_return_val_if_fail (max_brightness_percentage <= 100, FALSE);
+   priv = fbd_dev_led_get_instance_private (led);
+ 
+   max =  priv->max_brightness * (max_brightness_percentage / 100.0);
+-- 
+2.45.1
+

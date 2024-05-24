@@ -1,0 +1,75 @@
+# Forked from Alpine for HW pattern support
+# Maintainer: Dylan Van Assche <me@dylanvanassche.be>
+
+pkgname=feedbackd
+pkgver=9999_git20240524
+pkgrel=0
+pkgdesc="Daemon to provide haptic, LED, and audio feedback triggered by application events"
+url="https://source.puri.sm/Librem5/feedbackd"
+arch="all"
+license="GPL-3.0-or-later"
+depends="dbus feedbackd-device-themes"
+makedepends="
+	gi-docgen
+	glib-dev
+	gmobile-dev
+	gobject-introspection-dev
+	gsound-dev
+	gtk-doc
+	json-glib-dev
+	libgudev-dev
+	meson
+	vala
+	umockdev-dev
+	"
+_commit="cfa8e0b2daeb0f04bc6989d6f072d26b87e2eaad"
+subpackages="$pkgname-dev $pkgname-doc"
+builddir="$srcdir/$pkgname-main-$_commit"
+source="https://source.puri.sm/Librem5/feedbackd/-/archive/main/feedbackd-$_commit.tar.gz
+	0001-fbd-dev-led-multicolor-Use-separate-log-domain.patch
+	0002-fbd-dev-led-multicolor-Fix-typo-in-error-message.patch
+	0003-fbd-dev-led-Scan-for-RGB-color-as-well.patch
+	0004-fbd-dev-led-Adjust-to-method-convention.patch
+	0005-fbd-dev-led-Rework-color-API.patch
+	0006-fbd-ledctrl-Set-permissions-for-hw_pattern.patch
+	0007-fbd-dev-led-Check-max_brightness_percentage-range.patch
+	0008-fbd-dev-led-multicolor-Support-red-green-blue-and-wh.patch
+	0009-fbd-dev-led-qcom-Support-QCOM-LPG-LED-single-color.patch
+	0010-fbd-dev-led-qcom-multicolor-Support-QCOM-LPG-LED-mul.patch
+	0011-fbd-dev-leds-Probe-QCOM-HW-LED-types.patch
+       "
+install="$pkgname.pre-install $pkgname.pre-upgrade"
+
+build() {
+	ls
+	abuild-meson \
+		-Db_lto=true \
+		-Dgtk_doc=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --no-rebuild --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -Dm644 "$builddir"/debian/feedbackd.udev \
+		"$pkgdir"/usr/lib/udev/rules.d/90-feedbackd.rules
+}
+
+sha512sums="
+a43709b877d9716cdfb4bfa88c527f850d20ece4c61f90d0c418ceffead3841a57d528daaa0f5577be211d3895999157562953b77ce0a9029f46b2222d1e7a8b  feedbackd-cfa8e0b2daeb0f04bc6989d6f072d26b87e2eaad.tar.gz
+b872af4a58e96e9799456de5405719858be7a91fe8858b8678402692484181e1bfc3f9f720554dcbed13748332402e654c415b9cb37c319775eea8e94c9f2af3  0001-fbd-dev-led-multicolor-Use-separate-log-domain.patch
+249d82cc9f8e97d1993fa50e07c1f853a58d833fc2a231d8a226bc50092c0d948ca55bb6ac9e389d0cc96b0aba80479e755a1a0f379e5ce323cb9176d8214069  0002-fbd-dev-led-multicolor-Fix-typo-in-error-message.patch
+73be44d896668eee004f0d12188d4b08a78abc72be5bd56b40d0e4cf45cf6f0e658cd94db580ca77a8ee84a45660f67b08a662f65ad1238b96c03d5343c86887  0003-fbd-dev-led-Scan-for-RGB-color-as-well.patch
+6ab7798bd3f2fba982eea56f4797434620633b886afbe02f4748abb56e8cfd5bdd051cdf31d5cd64b718a509302368612e7fd577216fb574160ceaec32069ca6  0004-fbd-dev-led-Adjust-to-method-convention.patch
+7f278de3a164297e955e798db856dc2432e2e150615fff1abfda94f779cece6490c3762471a731f5f02913296ba884687c93a3c6f1ad7783e9e4c7758e8a4a2b  0005-fbd-dev-led-Rework-color-API.patch
+1c6b22932fdd2b5f9da8e0b676df5e70b341fd6acc3bddf064490d3d062c461bfeac59557256589a444714102922bf144da92d1b39488235e0d51cf32cd504fd  0006-fbd-ledctrl-Set-permissions-for-hw_pattern.patch
+053633d2f576e3859aa05c3682580179827431dbdb28c759aa57468a9656cd261343f90921aa06022a374cd0178577c821394ccb9ccbd80900e223b6422e3c68  0007-fbd-dev-led-Check-max_brightness_percentage-range.patch
+509c0f76f1b40b07993276f2c0cf50bb9fbb9e28e7da3c7444aab683685ccbe40b73f2a96d7108dffe1b38112244634e72c61821f57e45c8c72470f482ad583a  0008-fbd-dev-led-multicolor-Support-red-green-blue-and-wh.patch
+7a8582b81758b45d34ee8bf9d8fc49149286e33aced371df62f22e65d5ef67b5d47ed1e8d44aabea308c7dbc199d687f81fb747ca48eef54d70b18b010f026a6  0009-fbd-dev-led-qcom-Support-QCOM-LPG-LED-single-color.patch
+60e4c8fe8f7980b01c124f28d45ea415bf8ac5c203d8fbc43bae04e0af7646a2a8183b2e92a6e1185a77a30768dd7cc3d3862d6c409c5488e49015634fcec75a  0010-fbd-dev-led-qcom-multicolor-Support-QCOM-LPG-LED-mul.patch
+09386a4ae0daccef3e7193f04f65cff9194e7162665c75aa526202c3846f988ad0994f3dc8daa973f8b43ba2a06f44ed33bc943f718dcce9810b53c93f5b6d48  0011-fbd-dev-leds-Probe-QCOM-HW-LED-types.patch
+"

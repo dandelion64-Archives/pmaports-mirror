@@ -1,0 +1,57 @@
+From bd7e71cbbe424d6ffc7e90e48d50a9ff9739ba1b Mon Sep 17 00:00:00 2001
+From: Dylan Van Assche <me@dylanvanassche.be>
+Date: Fri, 10 Feb 2023 18:01:53 +0100
+Subject: [PATCH 04/11] fbd-dev-led-*: Adjust to method convention
+
+fbd_dev_led_ is the convention for methods, adjust them all.
+---
+ src/fbd-dev-led-multicolor.c | 12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/src/fbd-dev-led-multicolor.c b/src/fbd-dev-led-multicolor.c
+index 30a89ef..41fc97b 100644
+--- a/src/fbd-dev-led-multicolor.c
++++ b/src/fbd-dev-led-multicolor.c
+@@ -37,7 +37,7 @@ G_DEFINE_TYPE_WITH_PRIVATE (FbdDevLedMulticolor, fbd_dev_led_multicolor, FBD_TYP
+ 
+ 
+ static gboolean
+-fbd_dev_led_probe_multicolor (FbdDevLed *led, GError **error)
++fbd_dev_led_multicolor_probe (FbdDevLed *led, GError **error)
+ {
+   FbdDevLedMulticolor *self = FBD_DEV_LED_MULTICOLOR (led);
+   FbdDevLedMulticolorPrivate *priv = fbd_dev_led_multicolor_get_instance_private (self);
+@@ -90,7 +90,7 @@ fbd_dev_led_probe_multicolor (FbdDevLed *led, GError **error)
+ 
+ 
+ static gboolean
+-fbd_dev_led_start_periodic_multicolor (FbdDevLed           *led,
++fbd_dev_led_multicolor_start_periodic (FbdDevLed           *led,
+                                        FbdFeedbackLedColor  color,
+                                        guint                max_brightness_percentage,
+                                        guint                freq)
+@@ -142,9 +142,7 @@ fbd_dev_led_start_periodic_multicolor (FbdDevLed           *led,
+     return FALSE;
+   }
+ 
+-  /* Chain up to parent class to set the pattern */
+-  return FBD_DEV_LED_CLASS (fbd_dev_led_multicolor_parent_class)->start_periodic (
+-    led, color, max_brightness_percentage, freq);
++  return TRUE;
+ }
+ 
+ 
+@@ -160,8 +158,8 @@ fbd_dev_led_multicolor_class_init (FbdDevLedMulticolorClass *klass)
+ {
+   FbdDevLedClass *fbd_dev_led_class = FBD_DEV_LED_CLASS (klass);
+ 
+-  fbd_dev_led_class->probe = fbd_dev_led_probe_multicolor;
+-  fbd_dev_led_class->start_periodic = fbd_dev_led_start_periodic_multicolor;
++  fbd_dev_led_class->probe = fbd_dev_led_multicolor_probe;
++  fbd_dev_led_class->start_periodic = fbd_dev_led_multicolor_start_periodic;
+   fbd_dev_led_class->has_color = fbd_dev_led_has_color_multicolor;
+ }
+ 
+-- 
+2.45.1
+
